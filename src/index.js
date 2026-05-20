@@ -181,11 +181,20 @@ async function asanaFetch(path, env, options = {}) {
 }
 
 async function getPortfolioItems(env) {
+  const data = await asanaFetch(
+    `/portfolios/${env.ASANA_PORTFOLIO_GID}/items`,
+    env
+  );
+  return data.data || [];
+}
+
+async function getProjectDetails(projectGid, env) {
   const optFields = [
     "name",
     "custom_fields.gid",
     "custom_fields.name",
     "custom_fields.resource_subtype",
+    "custom_fields.display_value",
     "custom_fields.text_value",
     "custom_fields.number_value",
     "custom_fields.date_value",
@@ -199,11 +208,11 @@ async function getPortfolioItems(env) {
   ].join(",");
 
   const data = await asanaFetch(
-    `/portfolios/${env.ASANA_PORTFOLIO_GID}/items?opt_fields=${encodeURIComponent(optFields)}`,
+    `/projects/${projectGid}?opt_fields=${encodeURIComponent(optFields)}`,
     env
   );
 
-  return data.data || [];
+  return data.data;
 }
 
 async function loadMetadata(env) {
@@ -212,10 +221,13 @@ async function loadMetadata(env) {
     return metadataCache;
   }
 
-  const projects = await getPortfolioItems(env);
+  const portfolioItems = await getPortfolioItems(env);
+  const projects = portfolioItems.filter((item) => item.resource_type === "project").slice(0, 10);
 
-  for (const project of projects) {
+  for (const item of projects) {
+    const project = await getProjectDetails(item.gid, env);
     const fieldMap = getFieldMap(project.custom_fields || []);
+
     const stageField =
       fieldMap["Stage"] ||
       fieldMap["Project Stage"] ||
@@ -241,27 +253,11 @@ async function loadMetadata(env) {
   throw new Error("Unable to load Stage field metadata from Asana");
 }
 
-async function updateProjectCustomFields(projectGid, updates, env) {
-  const data = await asanaFetch(`/projects/${projectGid}`, env, {
-    method: "PUT",
-    headers: {
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      data: {
-        custom_fields: updates
-      }
-    })
-  });
-
-  return data.data;
-}
-
 async function handleJobs(request, env, origin) {
   const portfolioItems = await getPortfolioItems(env);
   const projects = portfolioItems
     .filter((item) => item.resource_type === "project")
-    .slice(0, 15);
+    .slice(0, 10);
 
   const metadata = await loadMetadata(env);
 
