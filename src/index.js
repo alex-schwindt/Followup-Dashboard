@@ -69,6 +69,94 @@ function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
+async function getAccessPublicKey(env, kid) {
+  const certsUrl = `${env.TEAM_DOMAIN}/cdn-cgi/access/certs`;
+  const res = await fetch(certsUrl);
+  if (!res.ok) throw new Error("Unable to load Access certs");
+
+  const data = await res.json();
+  const jwk = (data.keys || []).find((k) => k.kid === kid);
+  if (!jwk) throw new Error("Matching Access JWK not found");
+
+  return crypto.subtle.importKey(
+    "jwk",
+    jwk,
+    {
+      name: "RSASSA-PKCS1-v1_5",
+      hash: "SHA-256"
+    },
+    false,
+    ["verify"]
+  );
+}
+
+function decodeBase64Url(input) {
+  const padded =
+    input.replace(/-/g, "+").replace(/_/g, "/") +
+    "===".slice((input.length + 3) % 4);
+  const binary = atob(padded);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+function decodeJwtPart(input) {
+  return JSON.parse(new TextDecoder().decode(decodeBase64Url(input)));
+}
+
+async function validateAccessJwt(request, env) {
+  const jwt = request.headers.get("Cf-Access-Jwt-Assertion");
+  if (!jwt) throw new Error("Missing Cf-Access-Jwt-Assertion header");
+
+  const parts = jwt.split(".");
+  if (parts.length !== 3) throw new Error("Invalid Access JWT");
+
+  const [encodedHeader, encodedPayload, encodedSignature] = parts;
+  const header = decodeJwtPart(encodedHeader);
+  const payload = decodeJwtPart(encodedPayload);
+
+  const key = await getAccessPublicKey(env, header.kid);
+  const signed = new TextEncoder().encode(
+    `${encodedHeader}.${encodedPayload}`
+  );
+  const signature = decodeBase64Url(encodedSignature);
+
+  const ok = await crypto.subtle.verify(
+    "RSASSA-PKCS1-v1_5",
+    key,
+    signature,
+    signed
+  );
+
+  if (!ok) throw new Error("Invalid Access JWT signature");
+
+  const aud = payload.aud;
+  const audList = Array.isArray(aud) ? aud : [aud];
+  if (!audList.includes(env.POLICY_AUD)) {
+    throw new Error("Access JWT aud mismatch");
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  if (payload.exp && payload.exp < now) {
+    throw new Error("Access JWT expired");
+  }
+
+  return payload;
+}
+
+function mapEmailToRep(email) {
+  const normalized = (email || "").trim().toLowerCase();
+
+  const map = {
+    "alex.schwindt@hoffman-hoffman.com": "Turbo",
+    "chris.loftis@hoffman-hoffman.com": "Loftis",
+    "chris.turboville@hoffman-hoffman.com": "Turbo",
+    "nathan.harden@hoffman-hoffman.com": "Nate"
+  };
+
+  return map[normalized] || null;
+}
+
 async function asanaFetch(path, env, options = {}) {
   const res = await fetch(`https://app.asana.com/api/1.0${path}`, {
     ...options,
@@ -188,10 +276,21 @@ async function handleFollowUp(request, env, projectGid, origin) {
 
   const newFeedback = (body.feedback || "").trim();
   const nextFollowUpDate = body.nextFollowUpDate || null;
-  const rep = body.rep || null;
 
   if (!newFeedback) {
     return json({ ok: false, message: "feedback is required" }, 400, origin);
+  }
+
+  const identity = await validateAccessJwt(request, env);
+  const userEmail = identity.email || identity.sub || null;
+  const rep = mapEmailToRep(userEmail);
+
+  if (!rep) {
+    return json(
+      { ok: false, message: `Unauthorized commenter: ${userEmail}` },
+      403,
+      origin
+    );
   }
 
   const project = await getProjectDetails(projectGid, env);
@@ -228,11 +327,11 @@ async function handleFollowUp(request, env, projectGid, origin) {
   const updates = {};
 
   if (lastFollowUpField?.gid) {
-    updates[lastFollowUpField.gid] = { date: today };
+    updates[lastFollowUpField.gid] = today;
   }
 
   if (!closed && followUpField?.gid && nextFollowUpDate) {
-    updates[followUpField.gid] = { date: nextFollowUpDate };
+    updates[followUpField.gid] = nextFollowUpDate;
   }
 
   if (feedbackField?.gid) {
@@ -249,7 +348,9 @@ async function handleFollowUp(request, env, projectGid, origin) {
         name: project.name
       },
       appliedStage: currentStageName,
-      closed
+      closed,
+      commenterEmail: userEmail,
+      commenterRep: rep
     },
     200,
     origin
@@ -283,7 +384,11 @@ export default {
         const projectGid = parts[3];
 
         if (!projectGid) {
-          return json({ ok: false, message: "Project GID missing in path" }, 400, origin);
+          return json(
+            { ok: false, message: "Project GID missing in path" },
+            400,
+            origin
+          );
         }
 
         return await handleFollowUp(request, env, projectGid, origin);
