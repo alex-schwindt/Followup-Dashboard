@@ -222,7 +222,7 @@ async function loadMetadata(env) {
   }
 
   const portfolioItems = await getPortfolioItems(env);
-  const projects = portfolioItems.filter((item) => item.resource_type === "project").slice(0, 10);
+  const projects = portfolioItems.filter((item) => item.resource_type === "project");
 
   for (const item of projects) {
     const project = await getProjectDetails(item.gid, env);
@@ -255,9 +255,7 @@ async function loadMetadata(env) {
 
 async function handleJobs(request, env, origin) {
   const portfolioItems = await getPortfolioItems(env);
-  const projects = portfolioItems
-    .filter((item) => item.resource_type === "project")
-    .slice(0, 10);
+  const projects = portfolioItems.filter((item) => item.resource_type === "project");
 
   const metadata = await loadMetadata(env);
 
