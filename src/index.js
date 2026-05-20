@@ -258,13 +258,18 @@ async function updateProjectCustomFields(projectGid, updates, env) {
 }
 
 async function handleJobs(request, env, origin) {
-  const projects = await getPortfolioItems(env);
+  const portfolioItems = await getPortfolioItems(env);
+  const projects = portfolioItems
+    .filter((item) => item.resource_type === "project")
+    .slice(0, 15);
+
   const metadata = await loadMetadata(env);
 
-  const detailedProjects = projects
-    .filter((item) => item.resource_type === "project")
-    .map((project) => {
+  const detailedProjects = await Promise.all(
+    projects.map(async (item) => {
+      const project = await getProjectDetails(item.gid, env);
       const fields = getFieldMap(project.custom_fields || []);
+
       const rawStage = getEnumName(fields[metadata.stageFieldName] || fields["Stage"]);
       const normalizedStage = normalizeStage(rawStage);
       const salesReps = getMultiEnumNames(fields["Sales Rep"]);
@@ -289,7 +294,8 @@ async function handleJobs(request, env, origin) {
         contractorCustomer,
         engineer
       };
-    });
+    })
+  );
 
   return json(
     {
