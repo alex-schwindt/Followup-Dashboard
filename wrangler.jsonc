@@ -9,6 +9,8 @@
 	"compatibility_date": "2026-05-19",
 	"vars": {
     "ASANA_PORTFOLIO_GID": "1214896686233422"
+	"TEAM_DOMAIN": "https://wispy-glitter-fd02.cloudflareaccess.com"
+	"POLICY_AUD": "e4278467ecc665a8851d2ec180654c09de1efd5054e7eddb59974b4c5f88f4dc"
 	},
 	"observability": {
 		"enabled": true
