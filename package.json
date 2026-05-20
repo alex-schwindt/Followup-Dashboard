@@ -12,6 +12,8 @@
   },
   "devDependencies": {
     "@cloudflare/vitest-pool-workers": "^0.12.4",
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^5.4.10",
     "vitest": "~3.2.0",
     "wrangler": "^4.93.0"
   },
