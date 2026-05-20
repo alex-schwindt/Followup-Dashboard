@@ -181,20 +181,11 @@ async function asanaFetch(path, env, options = {}) {
 }
 
 async function getPortfolioItems(env) {
-  const data = await asanaFetch(
-    `/portfolios/${env.ASANA_PORTFOLIO_GID}/items`,
-    env
-  );
-  return data.data || [];
-}
-
-async function getProjectDetails(projectGid, env) {
   const optFields = [
     "name",
     "custom_fields.gid",
     "custom_fields.name",
     "custom_fields.resource_subtype",
-    "custom_fields.display_value",
     "custom_fields.text_value",
     "custom_fields.number_value",
     "custom_fields.date_value",
@@ -208,11 +199,11 @@ async function getProjectDetails(projectGid, env) {
   ].join(",");
 
   const data = await asanaFetch(
-    `/projects/${projectGid}?opt_fields=${encodeURIComponent(optFields)}`,
+    `/portfolios/${env.ASANA_PORTFOLIO_GID}/items?opt_fields=${encodeURIComponent(optFields)}`,
     env
   );
 
-  return data.data;
+  return data.data || [];
 }
 
 async function loadMetadata(env) {
@@ -221,32 +212,30 @@ async function loadMetadata(env) {
     return metadataCache;
   }
 
-  const portfolioItems = await getPortfolioItems(env);
-  const projects = portfolioItems.filter((item) => item.resource_type === "project");
+  const projects = await getPortfolioItems(env);
 
-  for (const item of projects) {
-    const project = await getProjectDetails(item.gid, env);
+  for (const project of projects) {
     const fieldMap = getFieldMap(project.custom_fields || []);
-
     const stageField =
       fieldMap["Stage"] ||
       fieldMap["Project Stage"] ||
       fieldMap["Sales Stage"];
 
-    if (stageField?.gid) {
-      metadataCache = {
-        stageFieldName: stageField.name,
-        stageFieldGid: stageField.gid,
-        stageOptions: (stageField.enum_options || [])
-          .filter((option) => option.enabled !== false)
-          .map((option) => ({
-            gid: option.gid,
-            name: option.name
-          }))
-      };
-      metadataLoadedAt = now;
-      return metadataCache;
-    }
+    if (!stageField?.gid) continue;
+
+    metadataCache = {
+      stageFieldName: stageField.name,
+      stageFieldGid: stageField.gid,
+      stageOptions: (stageField.enum_options || [])
+        .filter((option) => option.enabled !== false)
+        .map((option) => ({
+          gid: option.gid,
+          name: option.name
+        }))
+    };
+
+    metadataLoadedAt = now;
+    return metadataCache;
   }
 
   throw new Error("Unable to load Stage field metadata from Asana");
@@ -269,15 +258,13 @@ async function updateProjectCustomFields(projectGid, updates, env) {
 }
 
 async function handleJobs(request, env, origin) {
-  const portfolioItems = await getPortfolioItems(env);
-  const projects = portfolioItems.filter((item) => item.resource_type === "project");
+  const projects = await getPortfolioItems(env);
   const metadata = await loadMetadata(env);
 
-  const detailedProjects = await Promise.all(
-    projects.map(async (item) => {
-      const project = await getProjectDetails(item.gid, env);
+  const detailedProjects = projects
+    .filter((item) => item.resource_type === "project")
+    .map((project) => {
       const fields = getFieldMap(project.custom_fields || []);
-
       const rawStage = getEnumName(fields[metadata.stageFieldName] || fields["Stage"]);
       const normalizedStage = normalizeStage(rawStage);
       const salesReps = getMultiEnumNames(fields["Sales Rep"]);
@@ -302,8 +289,7 @@ async function handleJobs(request, env, origin) {
         contractorCustomer,
         engineer
       };
-    })
-  );
+    });
 
   return json(
     {
