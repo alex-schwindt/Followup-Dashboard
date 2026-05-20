@@ -182,7 +182,7 @@ async function asanaFetch(path, env, options = {}) {
 
 async function getPortfolioItems(env) {
   const data = await asanaFetch(
-    `/portfolios/${env.ASANA_PORTFOLIO_GID}/items?limit=${limit}`,
+    `/portfolios/${env.ASANA_PORTFOLIO_GID}/items`,
     env
   );
   return data.data || [];
@@ -221,7 +221,7 @@ async function loadMetadata(env) {
     return metadataCache;
   }
 
-  const portfolioItems = await getPortfolioItems(env, 20);
+  const portfolioItems = await getPortfolioItems(env);
   const projects = portfolioItems.filter((item) => item.resource_type === "project");
 
   for (const item of projects) {
@@ -269,7 +269,7 @@ async function updateProjectCustomFields(projectGid, updates, env) {
 }
 
 async function handleJobs(request, env, origin) {
-  const portfolioItems = await getPortfolioItems(env, 20);
+  const portfolioItems = await getPortfolioItems(env);
   const projects = portfolioItems.filter((item) => item.resource_type === "project");
   const metadata = await loadMetadata(env);
 
