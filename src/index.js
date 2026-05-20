@@ -254,17 +254,46 @@ async function loadMetadata(env) {
 }
 
 async function handleJobs(request, env, origin) {
-  const portfolioItems = await getPortfolioItems(env);
-  const projects = portfolioItems.filter((item) => item.resource_type === "project");
+  const identity = await validateAccessJwt(request, env);
+  const userEmail =
+    identity.email ||
+    identity.preferred_email ||
+    identity.name ||
+    null;
 
+  const normalizedEmail = (userEmail || "").trim().toLowerCase();
+  const rep = mapEmailToRep(userEmail);
+  const isAdmin = normalizedEmail === "alex.schwindt@hoffman-hoffman.com";
+
+  if (!isAdmin && !rep) {
+    return json(
+      { ok: false, message: `Unauthorized viewer: ${userEmail}` },
+      403,
+      origin
+    );
+  }
+
+  const portfolioItems = await getPortfolioItems(env);
   const metadata = await loadMetadata(env);
 
+  const matchingProjects = portfolioItems
+    .filter((item) => item.resource_type === "project")
+    .filter((item) => {
+      if (isAdmin) return true;
+
+      const fields = getFieldMap(item.custom_fields || []);
+      const salesReps = getMultiEnumNames(fields["Sales Rep"]);
+      return salesReps.includes(rep);
+    });
+
   const detailedProjects = await Promise.all(
-    projects.map(async (item) => {
+    matchingProjects.map(async (item) => {
       const project = await getProjectDetails(item.gid, env);
       const fields = getFieldMap(project.custom_fields || []);
 
-      const rawStage = getEnumName(fields[metadata.stageFieldName] || fields["Stage"]);
+      const rawStage = getEnumName(
+        fields[metadata.stageFieldName] || fields["Stage"]
+      );
       const normalizedStage = normalizeStage(rawStage);
       const salesReps = getMultiEnumNames(fields["Sales Rep"]);
       const contractorCustomer = getMultiEnumNames(fields["Contractor/Customer"]);
@@ -294,6 +323,9 @@ async function handleJobs(request, env, origin) {
   return json(
     {
       ok: true,
+      viewerEmail: userEmail,
+      viewerRep: rep,
+      isAdmin,
       count: detailedProjects.length,
       jobs: detailedProjects,
       stageOptions: metadata.stageOptions.map((option) => option.name)
