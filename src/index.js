@@ -282,6 +282,15 @@ async function handleFollowUp(request, env, projectGid, origin) {
   }
 
   const identity = await validateAccessJwt(request, env);
+  console.log("identity:", JSON.stringify(identity));
+  const userEmail =
+   identity.email ||
+   identity.preferred_email ||
+   identity.name ||
+  null;
+  console.log("resolved userEmail:", userEmail);
+  const rep = mapEmailToRep(userEmail);
+  console.log("resolved rep:", rep);
   const userEmail = identity.email || identity.sub || null;
   const rep = mapEmailToRep(userEmail);
 
@@ -341,20 +350,21 @@ async function handleFollowUp(request, env, projectGid, origin) {
   await updateProjectCustomFields(projectGid, updates, env);
 
   return json(
-    {
-      ok: true,
-      project: {
-        gid: project.gid,
-        name: project.name
-      },
-      appliedStage: currentStageName,
-      closed,
-      commenterEmail: userEmail,
-      commenterRep: rep
+  {
+    ok: true,
+    project: {
+      gid: project.gid,
+      name: project.name
     },
-    200,
-    origin
-  );
+    appliedStage: currentStageName,
+    closed,
+    commenterEmail: userEmail,
+    commenterRep: rep,
+    debugIdentity: identity
+  },
+  200,
+  origin
+);
 }
 
 export default {
