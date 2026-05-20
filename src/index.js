@@ -333,13 +333,13 @@ async function handleFollowUp(request, env, projectGid, origin) {
 
   const updates = {};
 
-  if (lastFollowUpField?.gid) {
-    updates[lastFollowUpField.gid] = today;
-  }
+if (lastFollowUpField?.gid) {
+  updates[lastFollowUpField.gid] = { date: today };
+}
 
-  if (!closed && followUpField?.gid && nextFollowUpDate) {
-    updates[followUpField.gid] = nextFollowUpDate;
-  }
+if (!closed && followUpField?.gid && nextFollowUpDate) {
+  updates[followUpField.gid] = { date: nextFollowUpDate };
+}
 
   if (feedbackField?.gid) {
     updates[feedbackField.gid] = appendedFeedback;
