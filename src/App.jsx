@@ -2,15 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 
 const SALES_REPS = ["All", "Turbo", "Nate", "Loftis"];
 const DUE_FILTERS = ["All", "Overdue", "Today", "This Week"];
-const STAGE_OPTIONS = [
-  "Budget Round",
-  "Quoted",
-  "Submittals",
-  "Components Shipping",
-  "Job Lost",
-  "Job Lost - Went BOD",
-  "Job Lost - Lost on Price"
-];
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
 function formatDate(value) {
@@ -73,6 +64,7 @@ function getSearchBlob(job) {
 
 export default function App() {
   const [jobs, setJobs] = useState([]);
+  const [stageOptions, setStageOptions] = useState([]);
   const [selectedRep, setSelectedRep] = useState("All");
   const [selectedDueFilter, setSelectedDueFilter] = useState("All");
   const [search, setSearch] = useState("");
@@ -83,7 +75,7 @@ export default function App() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [formFeedback, setFormFeedback] = useState("");
   const [formNextDate, setFormNextDate] = useState("");
-  const [formStage, setFormStage] = useState("Quoted");
+  const [formStage, setFormStage] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
   const [saveError, setSaveError] = useState("");
   const [saving, setSaving] = useState(false);
@@ -102,6 +94,7 @@ export default function App() {
         }
 
         setJobs(data.jobs || []);
+        setStageOptions(data.stageOptions || []);
       } catch (err) {
         setError(err.message || "Something went wrong");
       } finally {
@@ -160,7 +153,7 @@ export default function App() {
     setSaveError("");
     setFormFeedback("");
     setFormNextDate(selectedJob.followUpDate || "");
-    setFormStage(selectedJob.rawStage || "Quoted");
+    setFormStage(selectedJob.rawStage || stageOptions[0] || "");
     setIsModalOpen(true);
   }
 
@@ -180,12 +173,8 @@ export default function App() {
       const payload = {
         feedback: formFeedback,
         nextFollowUpDate: formNextDate,
-        rep: selectedJob?.salesReps?.[0] || ""
+        stage: formStage
       };
-
-      if (formStage && formStage === selectedJob.rawStage) {
-        payload.stage = formStage;
-      }
 
       const response = await fetch(`${API_BASE}/api/jobs/${selectedJob.gid}/follow-up`, {
         method: "POST",
@@ -217,6 +206,8 @@ export default function App() {
 
           return {
             ...job,
+            rawStage: formStage || job.rawStage,
+            stage: formStage || job.stage,
             followUpDate: formNextDate,
             lastFollowUp: today,
             feedback: updatedFeedback
@@ -459,7 +450,7 @@ export default function App() {
                     value={formStage}
                     onChange={(event) => setFormStage(event.target.value)}
                   >
-                    {STAGE_OPTIONS.map((option) => (
+                    {stageOptions.map((option) => (
                       <option key={option} value={option}>
                         {option}
                       </option>
