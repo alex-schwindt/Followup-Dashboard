@@ -180,7 +180,7 @@ async function asanaFetch(path, env, options = {}) {
   return data;
 }
 
-async function getPortfolioItems(env, limit = 20) {
+async function getPortfolioItems(env) {
   const data = await asanaFetch(
     `/portfolios/${env.ASANA_PORTFOLIO_GID}/items?limit=${limit}`,
     env
