@@ -69,6 +69,10 @@ function todayIsoDate() {
   return new Date().toISOString().slice(0, 10);
 }
 
+let metadataCache = null;
+let metadataLoadedAt = 0;
+const METADATA_TTL_MS = 5 * 60 * 1000;
+
 async function getAccessPublicKey(env, kid) {
   const certsUrl = `${env.TEAM_DOMAIN}/cdn-cgi/access/certs`;
   const res = await fetch(certsUrl);
@@ -196,6 +200,9 @@ async function getProjectDetails(projectGid, env) {
     "custom_fields.date_value",
     "custom_fields.enum_value.gid",
     "custom_fields.enum_value.name",
+    "custom_fields.enum_options.gid",
+    "custom_fields.enum_options.name",
+    "custom_fields.enum_options.enabled",
     "custom_fields.multi_enum_values.gid",
     "custom_fields.multi_enum_values.name"
   ].join(",");
@@ -206,6 +213,43 @@ async function getProjectDetails(projectGid, env) {
   );
 
   return data.data;
+}
+
+async function loadMetadata(env) {
+  const now = Date.now();
+  if (metadataCache && now - metadataLoadedAt < METADATA_TTL_MS) {
+    return metadataCache;
+  }
+
+  const portfolioItems = await getPortfolioItems(env, 20);
+  const projects = portfolioItems.filter((item) => item.resource_type === "project");
+
+  for (const item of projects) {
+    const project = await getProjectDetails(item.gid, env);
+    const fieldMap = getFieldMap(project.custom_fields || []);
+
+    const stageField =
+      fieldMap["Stage"] ||
+      fieldMap["Project Stage"] ||
+      fieldMap["Sales Stage"];
+
+    if (stageField?.gid) {
+      metadataCache = {
+        stageFieldName: stageField.name,
+        stageFieldGid: stageField.gid,
+        stageOptions: (stageField.enum_options || [])
+          .filter((option) => option.enabled !== false)
+          .map((option) => ({
+            gid: option.gid,
+            name: option.name
+          }))
+      };
+      metadataLoadedAt = now;
+      return metadataCache;
+    }
+  }
+
+  throw new Error("Unable to load Stage field metadata from Asana");
 }
 
 async function updateProjectCustomFields(projectGid, updates, env) {
@@ -227,13 +271,14 @@ async function updateProjectCustomFields(projectGid, updates, env) {
 async function handleJobs(request, env, origin) {
   const portfolioItems = await getPortfolioItems(env, 20);
   const projects = portfolioItems.filter((item) => item.resource_type === "project");
+  const metadata = await loadMetadata(env);
 
   const detailedProjects = await Promise.all(
     projects.map(async (item) => {
       const project = await getProjectDetails(item.gid, env);
       const fields = getFieldMap(project.custom_fields || []);
 
-      const rawStage = getEnumName(fields["Stage"]);
+      const rawStage = getEnumName(fields[metadata.stageFieldName] || fields["Stage"]);
       const normalizedStage = normalizeStage(rawStage);
       const salesReps = getMultiEnumNames(fields["Sales Rep"]);
       const contractorCustomer = getMultiEnumNames(fields["Contractor/Customer"]);
@@ -264,7 +309,8 @@ async function handleJobs(request, env, origin) {
     {
       ok: true,
       count: detailedProjects.length,
-      jobs: detailedProjects
+      jobs: detailedProjects,
+      stageOptions: metadata.stageOptions.map((option) => option.name)
     },
     200,
     origin
@@ -276,21 +322,20 @@ async function handleFollowUp(request, env, projectGid, origin) {
 
   const newFeedback = (body.feedback || "").trim();
   const nextFollowUpDate = body.nextFollowUpDate || null;
+  const selectedStageName = (body.stage || "").trim();
 
   if (!newFeedback) {
     return json({ ok: false, message: "feedback is required" }, 400, origin);
   }
 
   const identity = await validateAccessJwt(request, env);
-  console.log("identity:", JSON.stringify(identity));
   const userEmail =
-   identity.email ||
-   identity.preferred_email ||
-   identity.name ||
-  null;
-  console.log("resolved userEmail:", userEmail);
+    identity.email ||
+    identity.preferred_email ||
+    identity.name ||
+    null;
+
   const rep = mapEmailToRep(userEmail);
-  console.log("resolved rep:", rep);
 
   if (!rep) {
     return json(
@@ -300,13 +345,14 @@ async function handleFollowUp(request, env, projectGid, origin) {
     );
   }
 
+  const metadata = await loadMetadata(env);
   const project = await getProjectDetails(projectGid, env);
   const fields = getFieldMap(project.custom_fields || []);
 
   const feedbackField = fields["Feedback"];
   const lastFollowUpField = fields["Last Follow Up"];
   const followUpField = fields["Follow Up Date"];
-  const stageField = fields["Stage"];
+  const stageField = fields[metadata.stageFieldName] || fields["Stage"];
 
   const existingFeedback = feedbackField?.text_value || "";
 
@@ -321,7 +367,8 @@ async function handleFollowUp(request, env, projectGid, origin) {
     : newEntry;
 
   const currentStageName = getEnumName(stageField);
-  const closed = isClosedStage(currentStageName);
+  const appliedStageName = selectedStageName || currentStageName;
+  const closed = isClosedStage(appliedStageName);
 
   if (!closed && !nextFollowUpDate) {
     return json(
@@ -333,36 +380,51 @@ async function handleFollowUp(request, env, projectGid, origin) {
 
   const updates = {};
 
-if (lastFollowUpField?.gid) {
-  updates[lastFollowUpField.gid] = { date: today };
-}
+  if (lastFollowUpField?.gid) {
+    updates[lastFollowUpField.gid] = { date: today };
+  }
 
-if (!closed && followUpField?.gid && nextFollowUpDate) {
-  updates[followUpField.gid] = { date: nextFollowUpDate };
-}
+  if (!closed && followUpField?.gid && nextFollowUpDate) {
+    updates[followUpField.gid] = { date: nextFollowUpDate };
+  }
 
   if (feedbackField?.gid) {
     updates[feedbackField.gid] = appendedFeedback;
   }
 
+  if (stageField?.gid && selectedStageName) {
+    const selectedStage = metadata.stageOptions.find(
+      (option) => option.name === selectedStageName
+    );
+
+    if (!selectedStage) {
+      return json(
+        { ok: false, message: `Invalid stage selected: ${selectedStageName}` },
+        400,
+        origin
+      );
+    }
+
+    updates[stageField.gid] = selectedStage.gid;
+  }
+
   await updateProjectCustomFields(projectGid, updates, env);
 
   return json(
-  {
-    ok: true,
-    project: {
-      gid: project.gid,
-      name: project.name
+    {
+      ok: true,
+      project: {
+        gid: project.gid,
+        name: project.name
+      },
+      appliedStage: appliedStageName,
+      closed,
+      commenterEmail: userEmail,
+      commenterRep: rep
     },
-    appliedStage: currentStageName,
-    closed,
-    commenterEmail: userEmail,
-    commenterRep: rep,
-    debugIdentity: identity
-  },
-  200,
-  origin
-);
+    200,
+    origin
+  );
 }
 
 export default {
@@ -412,17 +474,17 @@ export default {
         origin
       );
     } catch (error) {
-  console.error("Worker error:", error);
-  return json(
-    {
-      ok: false,
-      message: "Worker error",
-      error: String(error),
-      stack: error?.stack || null
-    },
-    500,
-    origin
-  );
-}
+      console.error("Worker error:", error);
+      return json(
+        {
+          ok: false,
+          message: "Worker error",
+          error: String(error),
+          stack: error?.stack || null
+        },
+        500,
+        origin
+      );
+    }
   }
 };
