@@ -412,15 +412,17 @@ export default {
         origin
       );
     } catch (error) {
-      return json(
-        {
-          ok: false,
-          message: "Worker error",
-          error: String(error)
-        },
-        500,
-        origin
-      );
-    }
+  console.error("Worker error:", error);
+  return json(
+    {
+      ok: false,
+      message: "Worker error",
+      error: String(error),
+      stack: error?.stack || null
+    },
+    500,
+    origin
+  );
+}
   }
 };
