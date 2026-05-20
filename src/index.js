@@ -291,8 +291,6 @@ async function handleFollowUp(request, env, projectGid, origin) {
   console.log("resolved userEmail:", userEmail);
   const rep = mapEmailToRep(userEmail);
   console.log("resolved rep:", rep);
-  const userEmail = identity.email || identity.sub || null;
-  const rep = mapEmailToRep(userEmail);
 
   if (!rep) {
     return json(
