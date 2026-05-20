@@ -208,7 +208,7 @@ export default function App() {
           if (job.gid !== selectedJob.gid) return job;
 
           const today = new Date().toISOString().slice(0, 10);
-          const rep = job.salesReps?.[0] || "";
+          const rep = data.commenterRep || "";
           const header = rep ? `${today} (${rep})` : today;
           const newEntry = `${header}: ${formFeedback}\n`;
           const updatedFeedback = job.feedback
