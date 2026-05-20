@@ -148,9 +148,9 @@ function mapEmailToRep(email) {
   const normalized = (email || "").trim().toLowerCase();
 
   const map = {
-    "alex.schwindt@hoffman-hoffman.com": "Turbo",
+    "alex.schwindt@hoffman-hoffman.com": "Alex",
     "chris.loftis@hoffman-hoffman.com": "Loftis",
-    "chris.turboville@hoffman-hoffman.com": "Turbo",
+    "chris.turbeville@hoffman-hoffman.com": "Turbo",
     "nathan.harden@hoffman-hoffman.com": "Nate"
   };
 
