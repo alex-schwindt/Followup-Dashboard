@@ -284,7 +284,8 @@ async function handleJobs(request, env, origin) {
       const fields = getFieldMap(item.custom_fields || []);
       const salesReps = getMultiEnumNames(fields["Sales Rep"]);
       return salesReps.includes(rep);
-    });
+    })
+    .slice(0, isAdmin ? 50 : undefined);
 
   const detailedProjects = await Promise.all(
     matchingProjects.map(async (item) => {
