@@ -435,11 +435,9 @@ async function handleJobs(request, env, origin) {
 
   let jobs = (rows.results || []).map(rowToJob);
 
-  if (!isAdmin) {
-    jobs = jobs.filter((job) => (job.salesReps || []).includes(rep));
-  } else {
-    jobs = jobs.slice(0, 50);
-  }
+if (!isAdmin) {
+  jobs = jobs.filter((job) => (job.salesReps || []).includes(rep));
+}
 
   return json(
     {
