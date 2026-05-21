@@ -443,9 +443,24 @@ export default function App() {
                 <div className="stack-section">
                   <span className="meta-label">Engineer</span>
                   <div className="tag-row">
-                    {selectedJob.engineer.map((item) => (
-                      <span key={item} className="tag engineer-tag">{item}</span>
-                    ))}
+                    {selectedJob.engineer.length > 0
+                      ? selectedJob.engineer.map((item) => (
+                          <span key={item} className="tag engineer-tag">{item}</span>
+                        ))
+                      : <span className="meta-empty">—</span>
+                    }
+                  </div>
+                </div>
+
+                <div className="stack-section">
+                  <span className="meta-label">Application Engineer</span>
+                  <div className="tag-row">
+                    {selectedJob.appEngineer && selectedJob.appEngineer.length > 0
+                      ? selectedJob.appEngineer.map((item) => (
+                          <span key={item} className="tag app-engineer-tag">{item}</span>
+                        ))
+                      : <span className="meta-empty">—</span>
+                    }
                   </div>
                 </div>
 
