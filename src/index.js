@@ -301,7 +301,8 @@ function normalizeProjectToJob(project, metadata) {
     accuQuoteNumber: getTextValue(fields["AccuQuote#"]),
     salesReps: getMultiEnumNames(fields["Sales Rep"]),
     contractorCustomer: getMultiEnumNames(fields["Contractor/Customer"]),
-    engineer: getMultiEnumNames(fields["Application Engineer"] || fields["Engineer"])
+    engineer: getMultiEnumNames(fields["Engineer"]),
+    appEngineer: getMultiEnumNames(fields["Application Engineer"])
   };
 }
 
@@ -310,8 +311,8 @@ async function upsertJob(env, job) {
     INSERT INTO jobs (
       gid, name, raw_stage, stage, closed, follow_up_date, last_follow_up,
       feedback, bid_date, sell_price, accu_quote_number,
-      sales_reps_json, contractor_customer_json, engineer_json, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      sales_reps_json, contractor_customer_json, engineer_json, app_engineer_json, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(gid) DO UPDATE SET
       name = excluded.name,
       raw_stage = excluded.raw_stage,
@@ -326,6 +327,7 @@ async function upsertJob(env, job) {
       sales_reps_json = excluded.sales_reps_json,
       contractor_customer_json = excluded.contractor_customer_json,
       engineer_json = excluded.engineer_json,
+      app_engineer_json = excluded.app_engineer_json,
       updated_at = excluded.updated_at
   `)
     .bind(
@@ -343,6 +345,7 @@ async function upsertJob(env, job) {
       JSON.stringify(job.salesReps || []),
       JSON.stringify(job.contractorCustomer || []),
       JSON.stringify(job.engineer || []),
+      JSON.stringify(job.appEngineer || []),
       nowIso()
     )
     .run();
@@ -405,7 +408,8 @@ function rowToJob(row) {
     accuQuoteNumber: row.accu_quote_number,
     salesReps: JSON.parse(row.sales_reps_json || "[]"),
     contractorCustomer: JSON.parse(row.contractor_customer_json || "[]"),
-    engineer: JSON.parse(row.engineer_json || "[]")
+    engineer: JSON.parse(row.engineer_json || "[]"),
+    appEngineer: JSON.parse(row.app_engineer_json || "[]")
   };
 }
 
