@@ -62,7 +62,12 @@ function normalizeStage(stageName) {
 function isClosedStage(stageName) {
   if (!stageName) return false;
   const value = stageName.toLowerCase();
-  return value.includes("job lost") || value === "won" || value === "project awarded" || value === "project complete";
+  return (
+    value.includes("job lost") ||
+    value === "won" ||
+    value === "project awarded" ||
+    value === "project complete"
+  );
 }
 
 function todayIsoDate() {
@@ -359,8 +364,7 @@ async function syncJobsToDb(env) {
   let synced = 0;
 
   for (const item of projectItems) {
-    const project = await getProjectDetails(item.gid, env);
-    const job = normalizeProjectToJob(project, metadata);
+    const job = normalizeProjectToJob(item, metadata);
     await upsertJob(env, job);
     seen.add(job.gid);
     synced += 1;
@@ -435,9 +439,9 @@ async function handleJobs(request, env, origin) {
 
   let jobs = (rows.results || []).map(rowToJob);
 
-if (!isAdmin) {
-  jobs = jobs.filter((job) => (job.salesReps || []).includes(rep));
-}
+  if (!isAdmin) {
+    jobs = jobs.filter((job) => (job.salesReps || []).includes(rep));
+  }
 
   return json(
     {
