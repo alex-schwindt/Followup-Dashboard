@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-const SALES_REPS = ["All", "Turbo", "Nate", "Loftis"];
+const SALES_REPS = ["All", "Turbo", "Nate", "Loftis", "Alex"];
 const DUE_FILTERS = ["All", "Overdue", "Today", "This Week"];
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
@@ -8,6 +8,12 @@ function formatDate(value) {
   if (!value) return "—";
   const date = new Date(`${value}T00:00:00`);
   return date.toLocaleDateString();
+}
+
+function formatDateTime(value) {
+  if (!value) return "Never";
+  const date = new Date(value);
+  return date.toLocaleString();
 }
 
 function formatCurrency(value) {
@@ -23,7 +29,6 @@ function daysUntil(dateString) {
   if (!dateString) return null;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-
   const target = new Date(`${dateString}T00:00:00`);
   const diff = target.getTime() - today.getTime();
   return Math.round(diff / 86400000);
@@ -65,6 +70,10 @@ function getSearchBlob(job) {
 export default function App() {
   const [jobs, setJobs] = useState([]);
   const [stageOptions, setStageOptions] = useState([]);
+  const [viewerRep, setViewerRep] = useState(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [lastSyncAt, setLastSyncAt] = useState(null);
+
   const [selectedRep, setSelectedRep] = useState("All");
   const [selectedDueFilter, setSelectedDueFilter] = useState("All");
   const [search, setSearch] = useState("");
@@ -80,30 +89,69 @@ export default function App() {
   const [saveError, setSaveError] = useState("");
   const [saving, setSaving] = useState(false);
 
-  useEffect(() => {
-    async function loadJobs() {
-      try {
-        setLoading(true);
-        setError("");
+  const [syncing, setSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState("");
+  const [syncError, setSyncError] = useState("");
 
-        const response = await fetch(`${API_BASE}/api/jobs`);
-        const data = await response.json();
+  async function loadJobs() {
+    try {
+      setLoading(true);
+      setError("");
 
-        if (!response.ok || !data.ok) {
-          throw new Error(data.message || "Failed to load jobs");
-        }
+      const response = await fetch(`${API_BASE}/api/jobs`);
+      const data = await response.json();
 
-        setJobs(data.jobs || []);
-        setStageOptions(data.stageOptions || []);
-      } catch (err) {
-        setError(err.message || "Something went wrong");
-      } finally {
-        setLoading(false);
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Failed to load jobs");
       }
-    }
 
+      setJobs(data.jobs || []);
+      setStageOptions(data.stageOptions || []);
+      setViewerRep(data.viewerRep || null);
+      setIsAdmin(data.isAdmin || false);
+      setLastSyncAt(data.lastSyncAt || null);
+
+      // If the viewer is a specific rep, auto-filter to their name
+      if (data.viewerRep && !data.isAdmin) {
+        setSelectedRep(data.viewerRep);
+      }
+    } catch (err) {
+      setError(err.message || "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
     loadJobs();
   }, []);
+
+  async function handleAdminSync() {
+    try {
+      setSyncing(true);
+      setSyncMessage("");
+      setSyncError("");
+
+      const response = await fetch(`${API_BASE}/api/admin/sync`, {
+        method: "POST"
+      });
+      const data = await response.json();
+
+      if (!response.ok || !data.ok) {
+        throw new Error(data.message || "Sync failed");
+      }
+
+      setSyncMessage(`Synced ${data.synced} of ${data.totalPortfolioProjects} projects`);
+      setLastSyncAt(data.lastSyncAt);
+
+      // Reload jobs from the freshly synced D1
+      await loadJobs();
+    } catch (err) {
+      setSyncError(err.message || "Sync failed");
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   const filteredJobs = useMemo(() => {
     const term = search.trim().toLowerCase();
@@ -127,7 +175,6 @@ export default function App() {
       setSelectedJobId(null);
       return;
     }
-
     const exists = filteredJobs.some((job) => job.gid === selectedJobId);
     if (!exists) {
       setSelectedJobId(filteredJobs[0].gid);
@@ -139,11 +186,9 @@ export default function App() {
   const countsByRep = useMemo(() => {
     const activeJobs = jobs.filter((job) => !job.closed);
     const counts = { All: activeJobs.length };
-
     for (const rep of SALES_REPS.slice(1)) {
       counts[rep] = activeJobs.filter((job) => job.salesReps.includes(rep)).length;
     }
-
     return counts;
   }, [jobs]);
 
@@ -161,7 +206,7 @@ export default function App() {
     setIsModalOpen(false);
   }
 
-  async function handleMockSubmit(event) {
+  async function handleFollowUpSubmit(event) {
     event.preventDefault();
     if (!selectedJob) return;
 
@@ -178,9 +223,7 @@ export default function App() {
 
       const response = await fetch(`${API_BASE}/api/jobs/${selectedJob.gid}/follow-up`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
 
@@ -192,6 +235,7 @@ export default function App() {
 
       setSaveMessage("Follow up saved.");
 
+      // Optimistically update local state so UI reflects the change immediately
       setJobs((currentJobs) =>
         currentJobs.map((job) => {
           if (job.gid !== selectedJob.gid) return job;
@@ -233,6 +277,22 @@ export default function App() {
           <h1>Follow Up Dashboard</h1>
         </div>
         <div className="topbar-meta">
+          {lastSyncAt && (
+            <span className="sync-time">Synced {formatDateTime(lastSyncAt)}</span>
+          )}
+          {isAdmin && (
+            <div className="sync-controls">
+              <button
+                className={`sync-btn ${syncing ? "syncing" : ""}`}
+                onClick={handleAdminSync}
+                disabled={syncing}
+              >
+                {syncing ? "Syncing…" : "Sync Now"}
+              </button>
+              {syncMessage && <span className="sync-ok">{syncMessage}</span>}
+              {syncError && <span className="sync-err">{syncError}</span>}
+            </div>
+          )}
           <span>{filteredJobs.length} visible jobs</span>
         </div>
       </header>
@@ -309,13 +369,11 @@ export default function App() {
                         <strong>{job.name}</strong>
                         <span className={`due-badge ${due.tone}`}>{due.label}</span>
                       </div>
-
                       <div className="job-row-meta">
                         <span>{job.accuQuoteNumber || "No AccuQuote#"}</span>
                         <span>{job.stage}</span>
                         <span>{formatCurrency(job.sellPrice)}</span>
                       </div>
-
                       <div className="job-row-tags">
                         {job.salesReps.map((rep) => (
                           <span key={rep} className="tag rep-tag">{rep}</span>
@@ -411,12 +469,10 @@ export default function App() {
                 <p className="eyebrow">Update follow up</p>
                 <h3>{selectedJob.name}</h3>
               </div>
-              <button className="modal-close" onClick={closeModal}>
-                ×
-              </button>
+              <button className="modal-close" onClick={closeModal}>×</button>
             </div>
 
-            <form className="modal-form" onSubmit={handleMockSubmit}>
+            <form className="modal-form" onSubmit={handleFollowUpSubmit}>
               <div className="detail-card">
                 <span className="meta-label">AccuQuote#</span>
                 <strong>{selectedJob.accuQuoteNumber || "—"}</strong>
@@ -451,9 +507,7 @@ export default function App() {
                     onChange={(event) => setFormStage(event.target.value)}
                   >
                     {stageOptions.map((option) => (
-                      <option key={option} value={option}>
-                        {option}
-                      </option>
+                      <option key={option} value={option}>{option}</option>
                     ))}
                   </select>
                 </label>
