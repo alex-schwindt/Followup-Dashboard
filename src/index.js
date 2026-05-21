@@ -25,7 +25,9 @@ function json(data, status = 200, origin = "*") {
 
 function getFieldMap(customFields = []) {
   const map = {};
-  for (const field of customFields) map[field.name] = field;
+  for (const field of customFields) {
+    map[field.name] = field;
+  }
   return map;
 }
 
@@ -60,7 +62,7 @@ function normalizeStage(stageName) {
 function isClosedStage(stageName) {
   if (!stageName) return false;
   const value = stageName.toLowerCase();
-  return value.includes("job lost") || value === "won";
+  return value.includes("job lost") || value === "won" || value === "project awarded" || value === "project complete";
 }
 
 function todayIsoDate() {
@@ -71,6 +73,10 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function getIdentityEmail(identity) {
+  return identity.email || identity.preferred_email || identity.name || identity.sub || null;
+}
+
 let metadataCache = null;
 let metadataLoadedAt = 0;
 const METADATA_TTL_MS = 5 * 60 * 1000;
@@ -79,9 +85,11 @@ async function getAccessPublicKey(env, kid) {
   const certsUrl = `${env.TEAM_DOMAIN}/cdn-cgi/access/certs`;
   const res = await fetch(certsUrl);
   if (!res.ok) throw new Error("Unable to load Access certs");
+
   const data = await res.json();
   const jwk = (data.keys || []).find((k) => k.kid === kid);
   if (!jwk) throw new Error("Matching Access JWK not found");
+
   return crypto.subtle.importKey(
     "jwk",
     jwk,
@@ -92,7 +100,9 @@ async function getAccessPublicKey(env, kid) {
 }
 
 function decodeBase64Url(input) {
-  const padded = input.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((input.length + 3) % 4);
+  const padded =
+    input.replace(/-/g, "+").replace(/_/g, "/") +
+    "===".slice((input.length + 3) % 4);
   const binary = atob(padded);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
@@ -106,21 +116,38 @@ function decodeJwtPart(input) {
 async function validateAccessJwt(request, env) {
   const jwt = request.headers.get("Cf-Access-Jwt-Assertion");
   if (!jwt) throw new Error("Missing Cf-Access-Jwt-Assertion header");
+
   const parts = jwt.split(".");
   if (parts.length !== 3) throw new Error("Invalid Access JWT");
+
   const [encodedHeader, encodedPayload, encodedSignature] = parts;
   const header = decodeJwtPart(encodedHeader);
   const payload = decodeJwtPart(encodedPayload);
+
   const key = await getAccessPublicKey(env, header.kid);
   const signed = new TextEncoder().encode(`${encodedHeader}.${encodedPayload}`);
   const signature = decodeBase64Url(encodedSignature);
-  const ok = await crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, signature, signed);
+
+  const ok = await crypto.subtle.verify(
+    "RSASSA-PKCS1-v1_5",
+    key,
+    signature,
+    signed
+  );
+
   if (!ok) throw new Error("Invalid Access JWT signature");
+
   const aud = payload.aud;
   const audList = Array.isArray(aud) ? aud : [aud];
-  if (!audList.includes(env.POLICY_AUD)) throw new Error("Access JWT aud mismatch");
+  if (!audList.includes(env.POLICY_AUD)) {
+    throw new Error("Access JWT aud mismatch");
+  }
+
   const now = Math.floor(Date.now() / 1000);
-  if (payload.exp && payload.exp < now) throw new Error("Access JWT expired");
+  if (payload.exp && payload.exp < now) {
+    throw new Error("Access JWT expired");
+  }
+
   return payload;
 }
 
@@ -148,6 +175,7 @@ async function asanaFetch(path, env, options = {}) {
       ...(options.headers || {})
     }
   });
+
   const data = await res.json();
   if (!res.ok) throw new Error(JSON.stringify(data));
   return data;
@@ -183,11 +211,13 @@ async function getPortfolioItemsPage(env, offset = null, limit = 100) {
 async function getAllPortfolioItems(env) {
   const items = [];
   let offset = null;
+
   do {
     const page = await getPortfolioItemsPage(env, offset, 100);
     items.push(...(page.data || []));
     offset = page.next_page?.offset || null;
   } while (offset);
+
   return items;
 }
 
@@ -209,18 +239,31 @@ async function getProjectDetails(projectGid, env) {
     "custom_fields.multi_enum_values.gid",
     "custom_fields.multi_enum_values.name"
   ].join(",");
-  const data = await asanaFetch(`/projects/${projectGid}?opt_fields=${encodeURIComponent(optFields)}`, env);
+
+  const data = await asanaFetch(
+    `/projects/${projectGid}?opt_fields=${encodeURIComponent(optFields)}`,
+    env
+  );
+
   return data.data;
 }
 
 async function loadMetadata(env) {
   const now = Date.now();
-  if (metadataCache && now - metadataLoadedAt < METADATA_TTL_MS) return metadataCache;
+  if (metadataCache && now - metadataLoadedAt < METADATA_TTL_MS) {
+    return metadataCache;
+  }
+
   const items = await getAllPortfolioItems(env);
   for (const project of items) {
     const fieldMap = getFieldMap(project.custom_fields || []);
-    const stageField = fieldMap["Stage"] || fieldMap["Project Stage"] || fieldMap["Sales Stage"];
+    const stageField =
+      fieldMap["Stage"] ||
+      fieldMap["Project Stage"] ||
+      fieldMap["Sales Stage"];
+
     if (!stageField?.gid) continue;
+
     metadataCache = {
       stageFieldName: stageField.name,
       stageFieldGid: stageField.gid,
@@ -231,12 +274,14 @@ async function loadMetadata(env) {
     metadataLoadedAt = now;
     return metadataCache;
   }
+
   throw new Error("Unable to load Stage field metadata from Asana");
 }
 
 function normalizeProjectToJob(project, metadata) {
   const fields = getFieldMap(project.custom_fields || []);
   const rawStage = getEnumName(fields[metadata.stageFieldName] || fields["Stage"]);
+
   return {
     gid: project.gid,
     name: project.name,
@@ -277,23 +322,25 @@ async function upsertJob(env, job) {
       contractor_customer_json = excluded.contractor_customer_json,
       engineer_json = excluded.engineer_json,
       updated_at = excluded.updated_at
-  `).bind(
-    job.gid,
-    job.name,
-    job.rawStage,
-    job.stage,
-    job.closed ? 1 : 0,
-    job.followUpDate,
-    job.lastFollowUp,
-    job.feedback,
-    job.bidDate,
-    job.sellPrice,
-    job.accuQuoteNumber,
-    JSON.stringify(job.salesReps || []),
-    JSON.stringify(job.contractorCustomer || []),
-    JSON.stringify(job.engineer || []),
-    nowIso()
-  ).run();
+  `)
+    .bind(
+      job.gid,
+      job.name,
+      job.rawStage,
+      job.stage,
+      job.closed ? 1 : 0,
+      job.followUpDate,
+      job.lastFollowUp,
+      job.feedback,
+      job.bidDate,
+      job.sellPrice,
+      job.accuQuoteNumber,
+      JSON.stringify(job.salesReps || []),
+      JSON.stringify(job.contractorCustomer || []),
+      JSON.stringify(job.engineer || []),
+      nowIso()
+    )
+    .run();
 }
 
 async function refreshSingleProjectInDb(projectGid, env) {
@@ -329,9 +376,14 @@ async function syncJobsToDb(env) {
   await env.DB.prepare(`
     INSERT INTO app_meta (key, value) VALUES ('last_sync_at', ?)
     ON CONFLICT(key) DO UPDATE SET value = excluded.value
-  `).bind(nowIso()).run();
+  `)
+    .bind(nowIso())
+    .run();
 
-  return { synced, totalPortfolioProjects: projectItems.length };
+  return {
+    synced,
+    totalPortfolioProjects: projectItems.length
+  };
 }
 
 function rowToJob(row) {
@@ -354,13 +406,15 @@ function rowToJob(row) {
 }
 
 async function getLastSyncAt(env) {
-  const row = await env.DB.prepare("SELECT value FROM app_meta WHERE key = 'last_sync_at'").first();
+  const row = await env.DB.prepare(
+    "SELECT value FROM app_meta WHERE key = 'last_sync_at'"
+  ).first();
   return row?.value || null;
 }
 
 async function handleJobs(request, env, origin) {
   const identity = await validateAccessJwt(request, env);
-  const userEmail = identity.email || identity.preferred_email || identity.name || null;
+  const userEmail = getIdentityEmail(identity);
   const rep = mapEmailToRep(userEmail);
   const isAdmin = isAdminEmail(userEmail, env);
 
@@ -380,30 +434,42 @@ async function handleJobs(request, env, origin) {
   `).all();
 
   let jobs = (rows.results || []).map(rowToJob);
+
   if (!isAdmin) {
     jobs = jobs.filter((job) => (job.salesReps || []).includes(rep));
   } else {
     jobs = jobs.slice(0, 50);
   }
 
-  return json({
-    ok: true,
-    viewerEmail: userEmail,
-    viewerRep: rep,
-    isAdmin,
-    count: jobs.length,
-    jobs,
-    stageOptions: metadata.stageOptions.map((option) => option.name),
-    lastSyncAt: await getLastSyncAt(env)
-  }, 200, origin);
+  return json(
+    {
+      ok: true,
+      viewerEmail: userEmail,
+      viewerRep: rep,
+      isAdmin,
+      count: jobs.length,
+      jobs,
+      stageOptions: metadata.stageOptions.map((option) => option.name),
+      lastSyncAt: await getLastSyncAt(env)
+    },
+    200,
+    origin
+  );
 }
 
 async function updateProjectCustomFields(projectGid, updates, env) {
   const data = await asanaFetch(`/projects/${projectGid}`, env, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ data: { custom_fields: updates } })
+    headers: {
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      data: {
+        custom_fields: updates
+      }
+    })
   });
+
   return data.data;
 }
 
@@ -412,11 +478,15 @@ async function handleFollowUp(request, env, projectGid, origin) {
   const newFeedback = (body.feedback || "").trim();
   const nextFollowUpDate = body.nextFollowUpDate || null;
   const selectedStageName = (body.stage || "").trim();
-  if (!newFeedback) return json({ ok: false, message: "feedback is required" }, 400, origin);
+
+  if (!newFeedback) {
+    return json({ ok: false, message: "feedback is required" }, 400, origin);
+  }
 
   const identity = await validateAccessJwt(request, env);
-  const userEmail = identity.email || identity.preferred_email || identity.name || null;
+  const userEmail = getIdentityEmail(identity);
   const rep = mapEmailToRep(userEmail);
+
   if (!rep) {
     return json({ ok: false, message: `Unauthorized commenter: ${userEmail}` }, 403, origin);
   }
@@ -424,66 +494,114 @@ async function handleFollowUp(request, env, projectGid, origin) {
   const metadata = await loadMetadata(env);
   const project = await getProjectDetails(projectGid, env);
   const fields = getFieldMap(project.custom_fields || []);
+
   const feedbackField = fields["Feedback"];
   const lastFollowUpField = fields["Last Follow Up"];
   const followUpField = fields["Follow Up Date"];
   const stageField = fields[metadata.stageFieldName] || fields["Stage"];
+
   const existingFeedback = feedbackField?.text_value || "";
   const today = todayIsoDate();
   const headerParts = [today];
   if (rep) headerParts.push(`(${rep})`);
   const header = headerParts.join(" ");
+
   const newEntry = `${header}: ${newFeedback}\n`;
-  const appendedFeedback = existingFeedback ? `${newEntry}\n${existingFeedback}` : newEntry;
+  const appendedFeedback = existingFeedback
+    ? `${newEntry}\n${existingFeedback}`
+    : newEntry;
+
   const currentStageName = getEnumName(stageField);
   const appliedStageName = selectedStageName || currentStageName;
   const closed = isClosedStage(appliedStageName);
 
   if (!closed && !nextFollowUpDate) {
-    return json({ ok: false, message: "nextFollowUpDate is required for non-closed stages" }, 400, origin);
+    return json(
+      { ok: false, message: "nextFollowUpDate is required for non-closed stages" },
+      400,
+      origin
+    );
   }
 
   const updates = {};
-  if (lastFollowUpField?.gid) updates[lastFollowUpField.gid] = { date: today };
-  if (!closed && followUpField?.gid && nextFollowUpDate) updates[followUpField.gid] = { date: nextFollowUpDate };
-  if (feedbackField?.gid) updates[feedbackField.gid] = appendedFeedback;
+
+  if (lastFollowUpField?.gid) {
+    updates[lastFollowUpField.gid] = { date: today };
+  }
+
+  if (!closed && followUpField?.gid && nextFollowUpDate) {
+    updates[followUpField.gid] = { date: nextFollowUpDate };
+  }
+
+  if (feedbackField?.gid) {
+    updates[feedbackField.gid] = appendedFeedback;
+  }
 
   if (stageField?.gid && selectedStageName) {
-    const selectedStage = metadata.stageOptions.find((option) => option.name === selectedStageName);
+    const selectedStage = metadata.stageOptions.find(
+      (option) => option.name === selectedStageName
+    );
+
     if (!selectedStage) {
-      return json({ ok: false, message: `Invalid stage selected: ${selectedStageName}` }, 400, origin);
+      return json(
+        { ok: false, message: `Invalid stage selected: ${selectedStageName}` },
+        400,
+        origin
+      );
     }
+
     updates[stageField.gid] = selectedStage.gid;
   }
 
   await updateProjectCustomFields(projectGid, updates, env);
   await refreshSingleProjectInDb(projectGid, env);
 
-  return json({
-    ok: true,
-    project: { gid: project.gid, name: project.name },
-    appliedStage: appliedStageName,
-    closed,
-    commenterEmail: userEmail,
-    commenterRep: rep
-  }, 200, origin);
+  return json(
+    {
+      ok: true,
+      project: {
+        gid: project.gid,
+        name: project.name
+      },
+      appliedStage: appliedStageName,
+      closed,
+      commenterEmail: userEmail,
+      commenterRep: rep
+    },
+    200,
+    origin
+  );
 }
 
 async function handleAdminSync(request, env, origin) {
   const identity = await validateAccessJwt(request, env);
-  const userEmail = identity.email || identity.preferred_email || identity.name || null;
+  const userEmail = getIdentityEmail(identity);
+
   if (!isAdminEmail(userEmail, env)) {
     return json({ ok: false, message: `Unauthorized admin: ${userEmail}` }, 403, origin);
   }
+
   const result = await syncJobsToDb(env);
-  return json({ ok: true, ...result, lastSyncAt: await getLastSyncAt(env) }, 200, origin);
+  return json(
+    {
+      ok: true,
+      ...result,
+      lastSyncAt: await getLastSyncAt(env)
+    },
+    200,
+    origin
+  );
 }
 
 export default {
   async fetch(request, env) {
     const origin = request.headers.get("Origin") || "*";
+
     if (request.method === "OPTIONS") {
-      return new Response(null, { status: 204, headers: corsHeaders(origin) });
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders(origin)
+      });
     }
 
     try {
@@ -497,21 +615,42 @@ export default {
         return await handleAdminSync(request, env, origin);
       }
 
-      if (request.method === "POST" && url.pathname.startsWith("/api/jobs/") && url.pathname.endsWith("/follow-up")) {
+      if (
+        request.method === "POST" &&
+        url.pathname.startsWith("/api/jobs/") &&
+        url.pathname.endsWith("/follow-up")
+      ) {
         const parts = url.pathname.split("/");
         const projectGid = parts[3];
-        if (!projectGid) return json({ ok: false, message: "Project GID missing in path" }, 400, origin);
+
+        if (!projectGid) {
+          return json({ ok: false, message: "Project GID missing in path" }, 400, origin);
+        }
+
         return await handleFollowUp(request, env, projectGid, origin);
       }
 
-      return json({
-        ok: true,
-        message: "Asana Follow Up Dashboard API",
-        endpoints: ["/api/jobs", "POST /api/jobs/{gid}/follow-up", "POST /api/admin/sync"]
-      }, 200, origin);
+      return json(
+        {
+          ok: true,
+          message: "Asana Follow Up Dashboard API",
+          endpoints: ["/api/jobs", "POST /api/jobs/{gid}/follow-up", "POST /api/admin/sync"]
+        },
+        200,
+        origin
+      );
     } catch (error) {
       console.error("Worker error:", error);
-      return json({ ok: false, message: "Worker error", error: String(error), stack: error?.stack || null }, 500, origin);
+      return json(
+        {
+          ok: false,
+          message: "Worker error",
+          error: String(error),
+          stack: error?.stack || null
+        },
+        500,
+        origin
+      );
     }
   },
 
