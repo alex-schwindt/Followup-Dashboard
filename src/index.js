@@ -1,12 +1,3 @@
-/**
- * Welcome to Cloudflare Workers! This is your first worker.
- *
- * - Run `npm run dev` in your terminal to start a development server
- * - Open a browser tab at http://localhost:8787/ to see your worker in action
- * - Run `npm run deploy` to publish your worker 
- *
- * Learn more at https://developers.cloudflare.com/workers/
- */
 function corsHeaders(origin = "*") {
   return {
     "Access-Control-Allow-Origin": origin,
@@ -301,8 +292,14 @@ function normalizeProjectToJob(project, metadata) {
     accuQuoteNumber: getTextValue(fields["AccuQuote#"]),
     salesReps: getMultiEnumNames(fields["Sales Rep"]),
     contractorCustomer: getMultiEnumNames(fields["Contractor/Customer"]),
-    engineer: getMultiEnumNames(fields["Engineer"]),
-    appEngineer: getMultiEnumNames(fields["Application Engineer"])
+    engineer: getTextValue(fields["Engineer"]) ? [getTextValue(fields["Engineer"])] : [],
+    appEngineer: (() => {
+      const f = fields["Application Engineer"];
+      if (!f) return [];
+      if (f.multi_enum_values && f.multi_enum_values.length > 0) return getMultiEnumNames(f);
+      if (f.text_value) return [f.text_value];
+      return [];
+    })()
   };
 }
 
