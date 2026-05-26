@@ -1,8 +1,15 @@
-function corsHeaders(origin = "*") {
+const ALLOWED_ORIGINS = [
+  "https://followup.hoffman-hoffman.com",
+  "https://followup-dashboard.pages.dev"
+];
+
+function corsHeaders(origin) {
+  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
   return {
-    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Origin": allowed,
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    "Vary": "Origin",
     "content-type": "application/json; charset=utf-8"
   };
 }
@@ -584,6 +591,18 @@ async function handleAdminSync(request, env, origin) {
     return json({ ok: false, message: `Unauthorized admin: ${userEmail}` }, 403, origin);
   }
 
+  const lastSync = await getLastSyncAt(env);
+  if (lastSync) {
+    const secondsSinceLast = (Date.now() - new Date(lastSync).getTime()) / 1000;
+    if (secondsSinceLast < 60) {
+      return json(
+        { ok: false, message: `Sync cooldown active. Please wait ${Math.ceil(60 - secondsSinceLast)}s before syncing again.` },
+        429,
+        origin
+      );
+    }
+  }
+
   const result = await syncJobsToDb(env);
   return json(
     {
@@ -630,6 +649,10 @@ export default {
           return json({ ok: false, message: "Project GID missing in path" }, 400, origin);
         }
 
+        if (!/^\d+$/.test(projectGid)) {
+          return json({ ok: false, message: "Invalid project ID format" }, 400, origin);
+        }
+
         return await handleFollowUp(request, env, projectGid, origin);
       }
 
@@ -643,17 +666,8 @@ export default {
         origin
       );
     } catch (error) {
-      console.error("Worker error:", error);
-      return json(
-        {
-          ok: false,
-          message: "Worker error",
-          error: String(error),
-          stack: error?.stack || null
-        },
-        500,
-        origin
-      );
+      console.error("Worker error:", error?.stack || String(error));
+      return json({ ok: false, message: "Internal server error" }, 500, origin);
     }
   },
 
