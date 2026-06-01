@@ -49,6 +49,27 @@ function getNumberValue(field) {
   return field?.number_value ?? null;
 }
 
+
+async function jobContentHash(job) {
+  const str = JSON.stringify({
+    name: job.name,
+    rawStage: job.rawStage,
+    closed: job.closed,
+    followUpDate: job.followUpDate,
+    lastFollowUp: job.lastFollowUp,
+    feedback: job.feedback,
+    bidDate: job.bidDate,
+    sellPrice: job.sellPrice,
+    accuQuoteNumber: job.accuQuoteNumber,
+    salesReps: job.salesReps,
+    contractorCustomer: job.contractorCustomer,
+    engineer: job.engineer,
+    appEngineer: job.appEngineer
+  });
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 function normalizeStage(stageName) {
   if (!stageName) return "Unknown";
   if (stageName === "Budget Round") return "Budget";
@@ -310,13 +331,25 @@ function normalizeProjectToJob(project, metadata) {
   };
 }
 
-async function upsertJob(env, job) {
+async function upsertJob(env, job, force = false) {
+  const hash = await jobContentHash(job);
+
+  if (!force) {
+    const existing = await env.DB.prepare(
+      "SELECT content_hash FROM jobs WHERE gid = ?"
+    ).bind(job.gid).first();
+    if (existing && existing.content_hash === hash) {
+      return false; // unchanged — skip write
+    }
+  }
+
   await env.DB.prepare(`
     INSERT INTO jobs (
       gid, name, raw_stage, stage, closed, follow_up_date, last_follow_up,
       feedback, bid_date, sell_price, accu_quote_number,
-      sales_reps_json, contractor_customer_json, engineer_json, app_engineer_json, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      sales_reps_json, contractor_customer_json, engineer_json, app_engineer_json,
+      content_hash, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(gid) DO UPDATE SET
       name = excluded.name,
       raw_stage = excluded.raw_stage,
@@ -332,6 +365,7 @@ async function upsertJob(env, job) {
       contractor_customer_json = excluded.contractor_customer_json,
       engineer_json = excluded.engineer_json,
       app_engineer_json = excluded.app_engineer_json,
+      content_hash = excluded.content_hash,
       updated_at = excluded.updated_at
   `)
     .bind(
@@ -350,16 +384,19 @@ async function upsertJob(env, job) {
       JSON.stringify(job.contractorCustomer || []),
       JSON.stringify(job.engineer || []),
       JSON.stringify(job.appEngineer || []),
+      hash,
       nowIso()
     )
     .run();
+
+  return true; // written
 }
 
 async function refreshSingleProjectInDb(projectGid, env) {
   const metadata = await loadMetadata(env);
   const project = await getProjectDetails(projectGid, env);
   const job = normalizeProjectToJob(project, metadata);
-  await upsertJob(env, job);
+  await upsertJob(env, job, true); // force write — data just changed in Asana
   return job;
 }
 
@@ -370,11 +407,16 @@ async function syncJobsToDb(env) {
   const seen = new Set();
   let synced = 0;
 
+  let skipped = 0;
   for (const item of projectItems) {
     const job = normalizeProjectToJob(item, metadata);
-    await upsertJob(env, job);
+    const written = await upsertJob(env, job);
     seen.add(job.gid);
-    synced += 1;
+    if (written) {
+      synced += 1;
+    } else {
+      skipped += 1;
+    }
   }
 
   const existing = await env.DB.prepare("SELECT gid FROM jobs").all();
@@ -393,6 +435,7 @@ async function syncJobsToDb(env) {
 
   return {
     synced,
+    skipped,
     totalPortfolioProjects: projectItems.length
   };
 }
