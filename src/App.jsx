@@ -443,7 +443,7 @@ export default function App() {
                 <div className="stack-section">
                   <span className="meta-label">Engineer</span>
                   <div className="tag-row">
-                    {selectedJob.engineer.length > 0
+                    {selectedJob.engineer && selectedJob.engineer.length > 0
                       ? selectedJob.engineer.map((item) => (
                           <span key={item} className="tag engineer-tag">{item}</span>
                         ))
