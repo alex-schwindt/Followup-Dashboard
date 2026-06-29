@@ -320,7 +320,7 @@ function normalizeProjectToJob(project, metadata) {
     accuQuoteNumber: getTextValue(fields["AccuQuote#"]),
     salesReps: getMultiEnumNames(fields["Sales Rep"]),
     contractorCustomer: getMultiEnumNames(fields["Contractor/Customer"]),
-    engineer: getTextValue(fields["Engineer"]) ? [getTextValue(fields["Engineer"])] : [],
+    engineer: getMultiEnumNames(fields["Engineer"]),
     appEngineer: (() => {
       const f = fields["Application Engineer"];
       if (!f) return [];
