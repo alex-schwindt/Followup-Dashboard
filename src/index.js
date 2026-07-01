@@ -37,6 +37,20 @@ function getMultiEnumNames(field) {
   return (field?.multi_enum_values || []).map((v) => v.name);
 }
 
+function getMultiValueNames(field) {
+  if (!field) return [];
+  if (field.multi_enum_values && field.multi_enum_values.length > 0) {
+    return field.multi_enum_values.map((v) => v.name);
+  }
+  if (field.enum_value?.name) {
+    return [field.enum_value.name];
+  }
+  if (field.text_value) {
+    return [field.text_value];
+  }
+  return [];
+}
+
 function getDateValue(field) {
   return field?.date_value?.date || null;
 }
@@ -48,7 +62,6 @@ function getTextValue(field) {
 function getNumberValue(field) {
   return field?.number_value ?? null;
 }
-
 
 async function jobContentHash(job) {
   const str = JSON.stringify({
@@ -306,17 +319,6 @@ function normalizeProjectToJob(project, metadata) {
   const fields = getFieldMap(project.custom_fields || []);
   const rawStage = getEnumName(fields[metadata.stageFieldName] || fields["Stage"]);
 
-  const engineerField = fields["Engineer"];
-  console.log("Engineer debug", {
-    projectName: project.name,
-    hasEngineerField: !!engineerField,
-    engineerFieldName: engineerField?.name || null,
-    engineerSubtype: engineerField?.resource_subtype || null,
-    engineerEnumValue: engineerField?.enum_value?.name || null,
-    engineerMultiEnumValues: (engineerField?.multi_enum_values || []).map(v => v.name),
-    fieldNames: Object.keys(fields)
-  });
-
   return {
     gid: project.gid,
     name: project.name,
@@ -344,7 +346,7 @@ async function upsertJob(env, job, force = false) {
       "SELECT content_hash FROM jobs WHERE gid = ?"
     ).bind(job.gid).first();
     if (existing && existing.content_hash === hash) {
-      return false; // unchanged — skip write
+      return false;
     }
   }
 
@@ -394,14 +396,14 @@ async function upsertJob(env, job, force = false) {
     )
     .run();
 
-  return true; // written
+  return true;
 }
 
 async function refreshSingleProjectInDb(projectGid, env) {
   const metadata = await loadMetadata(env);
   const project = await getProjectDetails(projectGid, env);
   const job = normalizeProjectToJob(project, metadata);
-  await upsertJob(env, job, true); // force write — data just changed in Asana
+  await upsertJob(env, job, true);
   return job;
 }
 
@@ -411,10 +413,11 @@ async function syncJobsToDb(env) {
   const projectItems = portfolioItems.filter((item) => item.resource_type === "project");
   const seen = new Set();
   let synced = 0;
-
   let skipped = 0;
+
   for (const item of projectItems) {
-    const job = normalizeProjectToJob(item, metadata);
+    const project = await getProjectDetails(item.gid, env);
+    const job = normalizeProjectToJob(project, metadata);
     const written = await upsertJob(env, job);
     seen.add(job.gid);
     if (written) {
