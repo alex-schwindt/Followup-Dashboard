@@ -96,10 +96,11 @@ async function jobContentHash(job) {
 
 function normalizeStage(stageName) {
   if (!stageName) return "Unknown";
-  if (stageName === "Budget Round - DD") return "Budget - DD";
-  if (stageName === "Budget Round - SD") return "Budget - SD";
-  if (stageName === "Quoted") return "Quoted";
-  if (stageName.toLowerCase().includes("job lost")) return "Lost";
+  const lower = stageName.toLowerCase();
+  if (lower.includes("budget") && lower.includes("dd")) return "Budget - DD";
+  if (lower.includes("budget") && lower.includes("sd")) return "Budget - SD";
+  if (lower === "quoted") return "Quoted";
+  if (lower.includes("job lost")) return "Lost";
   return stageName;
 }
 

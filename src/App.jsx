@@ -54,7 +54,8 @@ function matchesDueFilter(job, filter) {
 }
 
 function isBudgetStage(stage) {
-  return stage === "Budget - DD" || stage === "Budget - SD";
+  if (!stage) return false;
+  return stage.toLowerCase().includes("budget");
 }
 
 function getSearchBlob(job) {
