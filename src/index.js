@@ -307,14 +307,15 @@ function normalizeProjectToJob(project, metadata) {
   const rawStage = getEnumName(fields[metadata.stageFieldName] || fields["Stage"]);
 
   const engineerField = fields["Engineer"];
-  console.log(
-    "Engineer debug:",
-    project.name,
-    JSON.stringify({
-      fieldNames: Object.keys(fields),
-      engineerField
-    }, null, 2)
-  );
+  console.log("Engineer debug", {
+    projectName: project.name,
+    hasEngineerField: !!engineerField,
+    engineerFieldName: engineerField?.name || null,
+    engineerSubtype: engineerField?.resource_subtype || null,
+    engineerEnumValue: engineerField?.enum_value?.name || null,
+    engineerMultiEnumValues: (engineerField?.multi_enum_values || []).map(v => v.name),
+    fieldNames: Object.keys(fields)
+  });
 
   return {
     gid: project.gid,
