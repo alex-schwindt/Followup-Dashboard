@@ -358,7 +358,8 @@ export default function App() {
                 {filteredJobs.map((job) => {
                   const due = getDueLabel(job.followUpDate);
                   const selected = job.gid === selectedJobId;
-                  const isBudget = job.stage === "Budget";
+                  const isBudget =
+                    job.stage === "Budget - DD" || job.stage === "Budget - SD";
 
                   return (
                     <button
@@ -382,7 +383,7 @@ export default function App() {
                       </div>
 
                       <div className="job-row-tags">
-                        {isBudget && <span className="tag budget-tag">Budget</span>}
+                        {isBudget && <span className="tag budget-tag">{job.stage}</span>}
                         {job.salesReps.map((rep) => (
                           <span key={rep} className="tag rep-tag">{rep}</span>
                         ))}
