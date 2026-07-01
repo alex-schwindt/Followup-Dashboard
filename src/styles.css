@@ -349,6 +349,20 @@ button {
   background: #eef8f8;
 }
 
+.job-row.budget-stage {
+  border-left: 5px solid var(--warning);
+}
+
+.job-row.budget-stage.selected {
+  border-left: 5px solid var(--warning);
+}
+
+.budget-tag {
+  background: #fde8bf;
+  color: #8d5f07;
+  font-weight: 600;
+}
+
 .job-row-top {
   display: flex;
   justify-content: space-between;
@@ -616,7 +630,7 @@ button {
   font-size: 0.82rem;
   color: var(--danger);
 }
-'.topbar-meta {
+.topbar-meta {
   display: flex;
   align-items: center;
   gap: 16px;

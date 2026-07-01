@@ -358,23 +358,31 @@ export default function App() {
                 {filteredJobs.map((job) => {
                   const due = getDueLabel(job.followUpDate);
                   const selected = job.gid === selectedJobId;
+                  const isBudget = job.stage === "Budget";
 
                   return (
                     <button
                       key={job.gid}
-                      className={selected ? "job-row selected" : "job-row"}
+                      className={[
+                        "job-row",
+                        selected ? "selected" : "",
+                        isBudget ? "budget-stage" : ""
+                      ].filter(Boolean).join(" ")}
                       onClick={() => setSelectedJobId(job.gid)}
                     >
                       <div className="job-row-top">
                         <strong>{job.name}</strong>
                         <span className={`due-badge ${due.tone}`}>{due.label}</span>
                       </div>
+
                       <div className="job-row-meta">
                         <span>{job.accuQuoteNumber || "No AccuQuote#"}</span>
                         <span>{job.stage}</span>
                         <span>{formatCurrency(job.sellPrice)}</span>
                       </div>
+
                       <div className="job-row-tags">
+                        {isBudget && <span className="tag budget-tag">Budget</span>}
                         {job.salesReps.map((rep) => (
                           <span key={rep} className="tag rep-tag">{rep}</span>
                         ))}
