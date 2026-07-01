@@ -306,6 +306,16 @@ function normalizeProjectToJob(project, metadata) {
   const fields = getFieldMap(project.custom_fields || []);
   const rawStage = getEnumName(fields[metadata.stageFieldName] || fields["Stage"]);
 
+  const engineerField = fields["Engineer"];
+  console.log(
+    "Engineer debug:",
+    project.name,
+    JSON.stringify({
+      fieldNames: Object.keys(fields),
+      engineerField
+    }, null, 2)
+  );
+
   return {
     gid: project.gid,
     name: project.name,
@@ -318,16 +328,10 @@ function normalizeProjectToJob(project, metadata) {
     bidDate: getDateValue(fields["Bid Date"]),
     sellPrice: getNumberValue(fields["Sell Price"]),
     accuQuoteNumber: getTextValue(fields["AccuQuote#"]),
-    salesReps: getMultiEnumNames(fields["Sales Rep"]),
-    contractorCustomer: getMultiEnumNames(fields["Contractor/Customer"]),
-    engineer: getMultiEnumNames(fields["Engineer"]),
-    appEngineer: (() => {
-      const f = fields["Application Engineer"];
-      if (!f) return [];
-      if (f.multi_enum_values && f.multi_enum_values.length > 0) return getMultiEnumNames(f);
-      if (f.text_value) return [f.text_value];
-      return [];
-    })()
+    salesReps: getMultiValueNames(fields["Sales Rep"]),
+    contractorCustomer: getMultiValueNames(fields["Contractor/Customer"]),
+    engineer: getMultiValueNames(fields["Engineer"]),
+    appEngineer: getMultiValueNames(fields["Application Engineer"])
   };
 }
 
