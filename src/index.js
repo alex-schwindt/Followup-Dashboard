@@ -37,6 +37,31 @@ function getMultiEnumNames(field) {
   return (field?.multi_enum_values || []).map((v) => v.name);
 }
 
+function getMultiValueNames(field) {
+  if (!field) return [];
+
+  if (field.multi_enum_values && field.multi_enum_values.length > 0) {
+    return field.multi_enum_values.map((v) => v.name).filter(Boolean);
+  }
+
+  if (field.enum_value?.name) {
+    return [field.enum_value.name];
+  }
+
+  if (field.text_value) {
+    return [field.text_value];
+  }
+
+  if (field.display_value) {
+    return field.display_value
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+}
+
 function getDateValue(field) {
   return field?.date_value?.date || null;
 }
@@ -48,7 +73,6 @@ function getTextValue(field) {
 function getNumberValue(field) {
   return field?.number_value ?? null;
 }
-
 
 async function jobContentHash(job) {
   const str = JSON.stringify({
@@ -212,6 +236,7 @@ async function getPortfolioItemsPage(env, offset = null, limit = 100) {
     "custom_fields.gid",
     "custom_fields.name",
     "custom_fields.resource_subtype",
+    "custom_fields.display_value",
     "custom_fields.text_value",
     "custom_fields.number_value",
     "custom_fields.date_value",
@@ -318,16 +343,10 @@ function normalizeProjectToJob(project, metadata) {
     bidDate: getDateValue(fields["Bid Date"]),
     sellPrice: getNumberValue(fields["Sell Price"]),
     accuQuoteNumber: getTextValue(fields["AccuQuote#"]),
-    salesReps: getMultiEnumNames(fields["Sales Rep"]),
-    contractorCustomer: getMultiEnumNames(fields["Contractor/Customer"]),
-    engineer: getMultiEnumNames(fields["Engineer"]),
-    appEngineer: (() => {
-      const f = fields["Application Engineer"];
-      if (!f) return [];
-      if (f.multi_enum_values && f.multi_enum_values.length > 0) return getMultiEnumNames(f);
-      if (f.text_value) return [f.text_value];
-      return [];
-    })()
+    salesReps: getMultiValueNames(fields["Sales Rep"]),
+    contractorCustomer: getMultiValueNames(fields["Contractor/Customer"]),
+    engineer: getMultiValueNames(fields["Engineer"]),
+    appEngineer: getMultiValueNames(fields["Application Engineer"])
   };
 }
 
