@@ -335,18 +335,26 @@ button {
 }
 
 .job-row {
+  position: relative;
   width: 100%;
   text-align: left;
   border: 1px solid var(--border);
-  border-left: 4px solid transparent;
   background: #fff;
   border-radius: 14px;
-  padding: 14px;
+  padding: 14px 14px 14px 18px;
   cursor: pointer;
+  overflow: hidden;
 }
 
-.job-row.budget-stage {
-  border-left-color: var(--warning);
+.job-row.budget-stage::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 6px;
+  background: var(--warning);
+  border-radius: 0 6px 6px 0;
 }
 
 .job-row.selected {
@@ -354,9 +362,6 @@ button {
   background: #eef8f8;
 }
 
-.job-row.budget-stage.selected {
-  border-left-color: var(--warning);
-}
 .budget-tag {
   background: #fde8bf;
   color: #8d5f07;
