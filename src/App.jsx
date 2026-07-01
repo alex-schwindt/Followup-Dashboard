@@ -53,6 +53,10 @@ function matchesDueFilter(job, filter) {
   return true;
 }
 
+function isBudgetStage(stage) {
+  return stage === "Budget - DD" || stage === "Budget - SD";
+}
+
 function getSearchBlob(job) {
   return [
     job.name,
@@ -111,7 +115,6 @@ export default function App() {
       setIsAdmin(data.isAdmin || false);
       setLastSyncAt(data.lastSyncAt || null);
 
-      // If the viewer is a specific rep, auto-filter to their name
       if (data.viewerRep && !data.isAdmin) {
         setSelectedRep(data.viewerRep);
       }
@@ -144,7 +147,6 @@ export default function App() {
       setSyncMessage(`Synced ${data.synced} of ${data.totalPortfolioProjects} projects`);
       setLastSyncAt(data.lastSyncAt);
 
-      // Reload jobs from the freshly synced D1
       await loadJobs();
     } catch (err) {
       setSyncError(err.message || "Sync failed");
@@ -235,7 +237,6 @@ export default function App() {
 
       setSaveMessage("Follow up saved.");
 
-      // Optimistically update local state so UI reflects the change immediately
       setJobs((currentJobs) =>
         currentJobs.map((job) => {
           if (job.gid !== selectedJob.gid) return job;
@@ -358,8 +359,7 @@ export default function App() {
                 {filteredJobs.map((job) => {
                   const due = getDueLabel(job.followUpDate);
                   const selected = job.gid === selectedJobId;
-                  const isBudget =
-                    job.stage === "Budget - DD" || job.stage === "Budget - SD";
+                  const isBudget = isBudgetStage(job.stage);
 
                   return (
                     <button
@@ -383,7 +383,6 @@ export default function App() {
                       </div>
 
                       <div className="job-row-tags">
-                        {isBudget && <span className="tag budget-tag">{job.stage}</span>}
                         {job.salesReps.map((rep) => (
                           <span key={rep} className="tag rep-tag">{rep}</span>
                         ))}
