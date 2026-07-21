@@ -207,7 +207,8 @@ function mapEmailToRep(email) {
     "alex.schwindt@hoffman-hoffman.com": "Alex",
     "chris.loftis@hoffman-hoffman.com": "Loftis",
     "chris.turbeville@hoffman-hoffman.com": "Turbo",
-    "nathan.harden@hoffman-hoffman.com": "Nate"
+    "nathan.harden@hoffman-hoffman.com": "Nate",
+    "mike.green@hoffman-hoffman.com": "Mike"
   };
   return map[normalized] || null;
 }
