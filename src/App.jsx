@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 
-const SALES_REPS = ["All", "Turbo", "Nate", "Loftis", "Alex", "Mike"];
+const SALES_REPS = ["All", "Turbo", "Nate", "Loftis", "Mike"];
 const DUE_FILTERS = ["All", "Overdue", "Today", "This Week"];
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "";
 
